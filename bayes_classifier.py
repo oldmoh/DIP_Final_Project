@@ -15,7 +15,9 @@ labled image has the same shape and pixel depth as those of image
 
 computing log likelihood is easier and we don't need actual value
 we only need to compare the probability of different gaussian distribution
+
 我已經試過把圖片分成到建築、道路、植被 但是效果非常差
+反而單純區分建築物與非建築物的結果比較好 至少不會標記大量非建築物
 '''
 
 '''
@@ -95,13 +97,16 @@ ln_prob_omega_2 = np.log(1.0 - num_bd_pixel/(5000*5000))
 
 '''
     Predicting
-    It takes 2927435 msec = 48.78 min.....QQ
-    
+    It takes 2927435 msec = 48.78 min
+    eahc iteration take about 380 millisecond
+    and the # of iterations is 25,000,000
+    .....QQ
 '''
 start_t = curr_time()
 print("start predicting")
 ground_truth = np.zeros((5000,5000),dtype=np.uint8)
 for index in np.ndindex(5000,5000):
+    start_t = curr_time()
     L1 = ln_prob_omega_1 + log_likelihood(image[index], mean1, cov1)
     L2 = ln_prob_omega_2 + log_likelihood(image[index], mean2, cov2)
     if L1 > L2:
