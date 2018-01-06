@@ -7,6 +7,7 @@ Created on Wed Dec 27 19:22:27 2017
 import os
 import cv2
 import numpy as np
+import time
 import scipy
 
 
@@ -19,28 +20,30 @@ we only need to compare the probability of different gaussian distribution
 '''
 
 '''
-    compute mean
+    return current time in millisecond
 '''
-def compute_mean(labeled_image, count):
-    summation = np.array([0,0,0])
-    summation[0] = np.sum(labeled_image[:,:,0])
-    summation[1] = np.sum(labeled_image[:,:,1])
-    summation[2] = np.sum(labeled_image[:,:,2])
-    mean = summation / count
-    return mean
+curr_time = lambda: int(round(time.time() * 1000))
 
 '''
-    compute covariance matrix
+    compute mean and covariance
 '''
-def compute_covariance(labeled_image, mean, count):
+def fun(img, label):
+    count = np.count_nonzero(label[:,:,0])
+    summation = np.array([0,0,0],dtype = np.int64)
+    temp = img * label
+    summation[0] = np.sum(temp[:,:,0])
+    summation[1] = np.sum(temp[:,:,1])
+    summation[2] = np.sum(temp[:,:,2])
+    mean = (summation / count).copy()
+    
     cov = np.zeros([3,3])
-    zeroIndex = np.array(np.nonzero(labeled_image[:,:,0]))
-    zeroIndex = np.stack((zeroIndex[0],zeroIndex[1]),axis=-1)
-    for index in zeroIndex:
-        temp = (labeled_image[tuple(index)] - mean).reshape(3,1) 
+    non_zero_idx = np.array(np.nonzero(label[:,:,0]))
+    non_zero_idx = np.stack((non_zero_idx[0],non_zero_idx[1]), axis=-1)
+    for index in non_zero_idx:
+        temp = (img[tuple(index)] - mean).reshape(3,1)
         cov = cov + temp * temp.transpose()
-    cov = cov / count
-    return cov
+    cov = (cov / count).copy()
+    return mean, cov
 
 '''
     compute log likelihood
@@ -58,48 +61,47 @@ def log_likelihood(x, mean, covariance):
     main process
 '''
 
-image_name = "./NEW-AerialImageDataset/AerialImageDataset/train/images/austin1.tif"
-gt_image_name = "./NEW-AerialImageDataset/AerialImageDataset/train/gt/austin1.tif"
+image_name = "../NEW-AerialImageDataset/AerialImageDataset/train/images/austin1.tif"
+gt_image_name = "../NEW-AerialImageDataset/AerialImageDataset/train/gt/austin1.tif"
+#gt_image_name = "../output/road_label.tif"
 
 #these two lines are redundant
-image = np.array(cv2.imread(image_name))
+source = np.array(cv2.imread(image_name))
 gt_img = np.array(cv2.imread(gt_image_name))
+
+#Pre-process
+blurred = cv2.GaussianBlur(source, (5,5), 0)
+image = blurred
 
 # map value of label image to 0~1
 mask = gt_img / 255
+
 #number of pixel labeled as building
 num_bd_pixel = np.count_nonzero(mask[:,:,0])
-
-# masked image
-building_img = image * mask
-nonbuilding_img = image - building_img
 
 # omega 1 is the building set and omega 2 is the nonbuilding set
 ln_prob_omega_1 = np.log(num_bd_pixel/(5000*5000))
 ln_prob_omega_2 = np.log(1.0 - num_bd_pixel/(5000*5000))
 
+mean1, cov1 = fun(source,mask)
+mean2, cov2 = fun(source,1.0 - mask)
 
-mean1 = compute_mean(building_img, num_bd_pixel)
-cov1 = compute_covariance(building_img, mean1, num_bd_pixel)
-
-mean2 = compute_mean(nonbuilding_img, 5000*5000-num_bd_pixel)
-cov2 = compute_covariance(nonbuilding_img, mean2, 5000*5000-num_bd_pixel)
-
-
+start_t = curr_time()
 # labeling
+# take 2927435 msec = 48.78 min.....QQ
+print("labeling")
 ground_truth = np.zeros((5000,5000),dtype=np.uint8)
-for y in range(0,5000):
-    for x in range(0, 5000):
-        L1 = ln_prob_omega_1 + log_likelihood(image[x,y], mean1, cov1)
-        L2 = ln_prob_omega_2 + log_likelihood(image[x,y], mean2, cov2)
+for index in np.ndindex(5000,5000):
+        L1 = ln_prob_omega_1 + log_likelihood(image[index], mean1, cov1)
+        L2 = ln_prob_omega_2 + log_likelihood(image[index], mean2, cov2)
         if L1 > L2:
-            ground_truth[x,y] = 255
+            ground_truth[index] = 255
+        
+        
+print("Execution time: ",end="")
+print(curr_time() - start_t)
+
+cv2.imwrite("../output/ground_truth.tif",ground_truth)
+#cv2.imwrite("../output/road.tif",ground_truth)
 
 
-cv2.imwrite("ground_truth.tif",ground_truth)
-
-cv2.namedWindow("image",cv2.WINDOW_NORMAL)
-cv2.imshow("image",ground_truth)
-cv2.waitKey(0)
-
-#os.system("pause")
