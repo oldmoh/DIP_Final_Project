@@ -46,17 +46,6 @@ def compute_mean_cov(img, label):
     cov = (cov / count).copy()
     return mean, cov
 
-'''
-    compute log likelihood
-    only need to conpute exponent part
-    ln p(x|omega_i) = -1/2 * ( (n*ln(2pi) + ln(determinant(C)) + (x-mean)^T * inverse of C * (x-mean)) )
-    where omega_i is i-th set, n is dimension, x is pixel value, C is covariance matrix
-    Note: the term n*ln(2pi) is a constant, so it can be ignored
-'''
-def log_likelihood(x, mean, covariance):
-    temp = (x - mean).reshape([3,1])
-    p = -0.5 * (np.log(np.linalg.det(covariance)) + temp.transpose()*np.mat(np.linalg.inv(covariance))*temp)
-    return p
 
 '''
     main process
@@ -83,7 +72,9 @@ image = blurred
 
 '''
     training
+    It takes 180352 millisecond
 '''
+#start_t = curr_time()
 #compute mean and covariance of building and nonbuilding
 mean1, cov1 = compute_mean_cov(source, mask)
 mean2, cov2 = compute_mean_cov(source, 1.0 - mask)
@@ -95,25 +86,35 @@ num_bd_pixel = np.count_nonzero(mask[:,:,0])
 ln_prob_omega_1 = np.log(num_bd_pixel/(5000*5000))
 ln_prob_omega_2 = np.log(1.0 - num_bd_pixel/(5000*5000))
 
+#print("Training time: ",end="")
+#print(curr_time() - start_t)
+
 '''
     Predicting
-    It takes 2927435 msec = 48.78 min
-    eahc iteration take about 380 millisecond
-    and the # of iterations is 25,000,000
-    .....QQ
+    It takes 33635 msec
+    
+    compute log likelihood
+    only need to conpute exponent part
+    ln p(x|omega_i) = -1/2 * ( (n*ln(2pi) + ln(determinant(C)) + (x-mean)^T * inverse of C * (x-mean)) )
+    where omega_i is i-th set, n is dimension, x is pixel value, C is covariance matrix
+    Note: the term n*ln(2pi) is a constant, so it can be ignored
+
 '''
-start_t = curr_time()
-print("start predicting")
+#start_t = curr_time()
 ground_truth = np.zeros((5000,5000),dtype=np.uint8)
+temp = image.reshape((5000*5000,3)) - mean1
+L1 = ((np.sum(np.array(temp * np.mat(np.linalg.inv(cov1))) * temp,axis=1) + np.log(np.linalg.det(cov1))) * -0.5 + ln_prob_omega_1).reshape(5000,5000)
+temp = image.reshape((5000*5000,3)) - mean2
+L2 = ((np.sum(np.array(temp * np.mat(np.linalg.inv(cov2))) * temp,axis=1) + np.log(np.linalg.det(cov2))) * -0.5 + ln_prob_omega_2).reshape(5000,5000)
+
 for index in np.ndindex(5000,5000):
-    start_t = curr_time()
-    L1 = ln_prob_omega_1 + log_likelihood(image[index], mean1, cov1)
-    L2 = ln_prob_omega_2 + log_likelihood(image[index], mean2, cov2)
-    if L1 > L2:
+    if L1[index] > L2[index]:
         ground_truth[index] = 255
-        
-print("Execution time: ",end="")
-print(curr_time() - start_t)
+                    
+#print("Execution time: ",end="")
+#print(curr_time() - start_t)
+
+
 
 '''
     Post-processing
