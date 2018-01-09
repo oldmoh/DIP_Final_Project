@@ -10,9 +10,6 @@ import time
 
 
 '''
-image is a 5000*5000*3 numpy array
-labled image has the same shape and pixel depth as those of image
-
 computing log likelihood is easier and we don't need actual value
 we only need to compare the probability of different gaussian distribution
 
@@ -27,6 +24,7 @@ curr_time = lambda: int(round(time.time() * 1000))
 
 '''
     compute mean and covariance
+    see the slide Object Recognition page 12
 '''
 def compute_mean_cov(img, label):
     count = np.count_nonzero(label[:,:,0])
@@ -46,61 +44,68 @@ def compute_mean_cov(img, label):
     cov = (cov / count).copy()
     return mean, cov
 
-
 '''
-    main process
+    Training Loop
 '''
-
-#read image and labels
 image_name = "../NEW-AerialImageDataset/AerialImageDataset/train/images/austin1.tif"
 gt_image_name = "../NEW-AerialImageDataset/AerialImageDataset/train/gt/austin1.tif"
-#gt_road = "../output/road_label.tif"
-#gt_plant = "../output/plant_label.tif"
 
-#these two lines are redundant
-source = np.array(cv2.imread(image_name))
-gt_img = np.array(cv2.imread(gt_image_name))
+#number of training images
+num_of_training = 4
 
-#normalizing
-mask = gt_img / 255
+mean1 = np.array([0,0,0])
+cov1 = np.zeros((3,3))
+mean2 = np.array([0,0,0])
+cov2 = np.zeros((3,3))
+num_bd_pixel = 0
+
+#read 4 images
+for x in range(1,num_of_training+1):
+    image_name = image_name.replace(str(x-1),str(x),1)
+    gt_image_name = gt_image_name.replace(str(x-1),str(x),1)
+    
+    #load image and ground truth
+    source = np.array(cv2.imread(image_name))
+    gt_img = np.array(cv2.imread(gt_image_name))
+    #normalize ground truth
+    mask = gt_img / 255
+    
+    #compute mean and covariance
+    temp_mean1, temp_cov1 = compute_mean_cov(source, mask)
+    temp_mean2, temp_cov2 = compute_mean_cov(source, 1.0 - mask)
+    
+    #number of pixels labeled as building
+    num_bd_pixel = num_bd_pixel + np.count_nonzero(mask[:,:,0])
+    
+    mean1 = mean1 + temp_mean1
+    mean2 = mean2 + temp_mean2
+    cov1 = cov1 + temp_cov1
+    cov2 = cov2 + temp_cov2
+
+mean1 = mean1 / num_of_training
+mean2 = mean2 / num_of_training
+cov1 = cov1 / num_of_training
+cov2 = cov2 / num_of_training
+
+#log probability of labeled pixel and unlabeled pixel in ground truth
+ln_prob_omega_1 = np.log(num_bd_pixel/(num_of_training * 5000*5000))
+ln_prob_omega_2 = np.log(1.0 - num_bd_pixel/(num_of_training * 5000*5000))
+
+print("Training Finish")
+
 
 '''
     Pre-processing
+    median smoothing
 '''
-blurred = cv2.GaussianBlur(source, (5,5), 0)
+test_name = "../NEW-AerialImageDataset/AerialImageDataset/train/images/austin1.tif"
+test_img = cv2.imread(test_name)
+blurred = cv2.medianBlur(test_img, 7)
 image = blurred
 
 '''
-    training
-    It takes 180352 millisecond
-'''
-#start_t = curr_time()
-#compute mean and covariance of building and nonbuilding
-mean1, cov1 = compute_mean_cov(source, mask)
-mean2, cov2 = compute_mean_cov(source, 1.0 - mask)
-
-#number of pixel labeled as building
-num_bd_pixel = np.count_nonzero(mask[:,:,0])
-
-# these are ln(P(building)) and ln(P(non-building))
-ln_prob_omega_1 = np.log(num_bd_pixel/(5000*5000))
-ln_prob_omega_2 = np.log(1.0 - num_bd_pixel/(5000*5000))
-
-#print("Training time: ",end="")
-#print(curr_time() - start_t)
-
-'''
     Predicting
-    It takes 33635 msec
-    
-    compute log likelihood
-    only need to conpute exponent part
-    ln p(x|omega_i) = -1/2 * ( (n*ln(2pi) + ln(determinant(C)) + (x-mean)^T * inverse of C * (x-mean)) )
-    where omega_i is i-th set, n is dimension, x is pixel value, C is covariance matrix
-    Note: the term n*ln(2pi) is a constant, so it can be ignored
-
 '''
-#start_t = curr_time()
 ground_truth = np.zeros((5000,5000),dtype=np.uint8)
 temp = image.reshape((5000*5000,3)) - mean1
 L1 = ((np.sum(np.array(temp * np.mat(np.linalg.inv(cov1))) * temp,axis=1) + np.log(np.linalg.det(cov1))) * -0.5 + ln_prob_omega_1).reshape(5000,5000)
@@ -110,9 +115,6 @@ L2 = ((np.sum(np.array(temp * np.mat(np.linalg.inv(cov2))) * temp,axis=1) + np.l
 for index in np.ndindex(5000,5000):
     if L1[index] > L2[index]:
         ground_truth[index] = 255
-                    
-#print("Execution time: ",end="")
-#print(curr_time() - start_t)
 
 
 
